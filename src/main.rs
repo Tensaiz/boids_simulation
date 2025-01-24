@@ -96,9 +96,9 @@ fn rule3_alignment(boid: &Boid, boids: &[Boid], alignment_radius: f32) -> Vec2 {
 async fn main() {
     // Parameters for the simulation
     let mut max_speed = 6.0;
-    let mut cohesion_radius = 40.0;
-    let mut alignment_radius = 50.0;
-    let mut separation_radius = 20.0;
+    let mut cohesion_radius = 100.0;
+    let mut separation_radius = 30.0;
+    let mut alignment_radius = 10.0;
     let mut num_boids = 100;
     let mut boid_size = 2.0;
 
@@ -195,7 +195,7 @@ async fn main() {
                         })
                         .collect();
                 }
-                ui.add(egui::Slider::new(&mut num_boids, 10..=1_000).text("Number of Boids"));
+                ui.add(egui::Slider::new(&mut num_boids, 10..=3_000).text("Number of Boids"));
             });
         });
 
