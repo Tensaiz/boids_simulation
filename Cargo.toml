@@ -1,0 +1,11 @@
+[package]
+name = "naive_boids"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+macroquad = "0.4.5"
+egui = "0.28"
+new-egui-macroquad = "0.16.0"
+flamegraph = "0.6.7"
+rayon = "1.10.0"
