@@ -291,6 +291,9 @@ async fn main() {
     let mut num_boids = 100;
     let mut boid_size = 2.0;
 
+    let mut render_quadtree = false;
+    let mut follow_single = false;
+
     const FIXED_TIMESTEP: f32 = 1.0 / 60.0; // 60 updates per second
     const MAX_TIMESTEP_ACCUMULATION: f32 = 0.1;
     let mut accumulator = 0.0;
@@ -337,7 +340,7 @@ async fn main() {
 
         // Draw the boids
         for (i, boid) in boids.iter().enumerate() {
-            if i == 0 {
+            if i == 0 && follow_single {
                 draw_circle_lines(boid.position.x, boid.position.y, cohesion_radius, 1.0, RED);
                 draw_circle_lines(
                     boid.position.x,
@@ -358,9 +361,6 @@ async fn main() {
                 draw_circle(boid.position.x, boid.position.y, boid_size, WHITE);
             }
         }
-
-        // Draw QuadTree
-        quadtree.render();
 
         // Render egui
         new_egui_macroquad::ui(|egui_ctx| {
@@ -388,6 +388,11 @@ async fn main() {
                         })
                         .collect();
                 }
+                ui.add(egui::Checkbox::new(&mut follow_single, "Mark single boid"));
+                ui.add(egui::Checkbox::new(
+                    &mut render_quadtree,
+                    "Render the quad tree",
+                ));
                 ui.add(egui::Slider::new(&mut num_boids, 10..=10_000).text("Number of Boids"));
             });
         });
@@ -414,6 +419,10 @@ async fn main() {
             _ => (),
         }
 
+        // Draw QuadTree
+        if render_quadtree {
+            quadtree.render();
+        }
         next_frame().await;
     }
 }
