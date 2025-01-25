@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use rayon::prelude::*;
 
 const SCREEN_WIDTH: f32 = 1920.0;
 const SCREEN_HEIGHT: f32 = 1080.0;
@@ -30,26 +31,6 @@ fn create_boid_data(num_boids: usize) -> BoidData {
             .push(vec2(angle.cos(), angle.sin()) * rand::gen_range(0.0, 10.0));
     }
     data
-}
-
-fn update_boid(i: usize, data: &mut BoidData, max_speed: f32) {
-    // Clamp velocity
-    data.velocities[i] = data.velocities[i].clamp_length_max(max_speed);
-
-    // Update position
-    data.positions[i] += data.velocities[i];
-
-    // Wrap around screen
-    if data.positions[i].x > SCREEN_WIDTH {
-        data.positions[i].x = 0.0;
-    } else if data.positions[i].x < 0.0 {
-        data.positions[i].x = SCREEN_WIDTH;
-    }
-    if data.positions[i].y > SCREEN_HEIGHT {
-        data.positions[i].y = 0.0;
-    } else if data.positions[i].y < 0.0 {
-        data.positions[i].y = SCREEN_HEIGHT;
-    }
 }
 
 fn rule1_cohesion(i: usize, data: &BoidData, interaction_radius: f32) -> Vec2 {
@@ -143,24 +124,40 @@ async fn main() {
             accumulator = MAX_TIMESTEP_ACCUMULATION;
         }
 
+        let mut forces = vec![Vec2::ZERO; boid_data.positions.len()];
         while accumulator >= FIXED_TIMESTEP {
-            let forces: Vec<Vec2> = (0..boid_data.positions.len())
-                .map(|i| {
-                    let cohesion = rule1_cohesion(i, &boid_data, cohesion_radius);
-                    let separation = rule2_separation(i, &boid_data, separation_radius);
-                    let alignment = rule3_alignment(i, &boid_data, alignment_radius);
-                    cohesion + separation + alignment
-                })
-                .collect();
+            forces.par_iter_mut().enumerate().for_each(|(i, force)| {
+                let cohesion = rule1_cohesion(i, &boid_data, cohesion_radius);
+                let separation = rule2_separation(i, &boid_data, separation_radius);
+                let alignment = rule3_alignment(i, &boid_data, alignment_radius);
+                *force = cohesion + separation + alignment;
+            });
 
-            for (i, &force) in forces.iter().enumerate() {
-                boid_data.velocities[i] += force;
-                update_boid(i, &mut boid_data, max_speed);
-            }
+            boid_data
+                .positions
+                .par_iter_mut()
+                .zip(boid_data.velocities.par_iter_mut())
+                .zip(forces.par_iter())
+                .for_each(|((pos, vel), &force)| {
+                    *vel += force;
+                    *vel = vel.clamp_length_max(max_speed);
+                    *pos += *vel;
+
+                    // Wrap around the screen
+                    if pos.x > SCREEN_WIDTH {
+                        pos.x = 0.0;
+                    } else if pos.x < 0.0 {
+                        pos.x = SCREEN_WIDTH;
+                    }
+                    if pos.y > SCREEN_HEIGHT {
+                        pos.y = 0.0;
+                    } else if pos.y < 0.0 {
+                        pos.y = SCREEN_HEIGHT;
+                    }
+                });
 
             accumulator -= FIXED_TIMESTEP;
         }
-
         // Draw the boids
         for (i, (&pos, _)) in boid_data
             .positions
@@ -198,7 +195,7 @@ async fn main() {
                 if ui.button("Reset Boids").clicked() {
                     boid_data = create_boid_data(num_boids);
                 }
-                ui.add(egui::Slider::new(&mut num_boids, 10..=3_000).text("Number of Boids"));
+                ui.add(egui::Slider::new(&mut num_boids, 10..=10_000).text("Number of Boids"));
             });
         });
 
