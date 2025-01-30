@@ -225,11 +225,17 @@ impl Boid {
     }
 }
 
-fn rule1_cohesion(boid: &Boid, boids: &[Boid], interaction_radius: f32) -> Vec2 {
+fn rule1_cohesion(
+    boid: &Boid,
+    neighbor_indices: &[usize],
+    boids: &[Boid],
+    interaction_radius: f32,
+) -> Vec2 {
     let mut center_of_mass = Vec2::ZERO;
     let mut count = 0;
 
-    for other in boids {
+    for other_ind in neighbor_indices {
+        let other = boids[*other_ind];
         if boid.position.distance(other.position) < interaction_radius {
             center_of_mass += other.position;
             count += 1;
@@ -244,11 +250,17 @@ fn rule1_cohesion(boid: &Boid, boids: &[Boid], interaction_radius: f32) -> Vec2 
     Vec2::ZERO
 }
 
-fn rule2_separation(boid: &Boid, boids: &[Boid], separation_radius: f32) -> Vec2 {
+fn rule2_separation(
+    boid: &Boid,
+    neighbor_indices: &[usize],
+    boids: &[Boid],
+    separation_radius: f32,
+) -> Vec2 {
     let mut move_away = Vec2::ZERO;
     let mut count = 0;
 
-    for other in boids {
+    for other_ind in neighbor_indices {
+        let other = boids[*other_ind];
         let distance = boid.position.distance(other.position);
         if distance > 0.0 && distance < separation_radius {
             move_away += (boid.position - other.position).normalize_or_zero();
@@ -263,11 +275,17 @@ fn rule2_separation(boid: &Boid, boids: &[Boid], separation_radius: f32) -> Vec2
     Vec2::ZERO
 }
 
-fn rule3_alignment(boid: &Boid, boids: &[Boid], alignment_radius: f32) -> Vec2 {
+fn rule3_alignment(
+    boid: &Boid,
+    neighbor_indices: &[usize],
+    boids: &[Boid],
+    alignment_radius: f32,
+) -> Vec2 {
     let mut avg_velocity = Vec2::ZERO;
     let mut count = 0;
 
-    for other in boids {
+    for other_ind in neighbor_indices {
+        let other = boids[*other_ind];
         if boid.position.distance(other.position) < alignment_radius {
             avg_velocity += other.velocity;
             count += 1;
@@ -285,6 +303,7 @@ fn rule3_alignment(boid: &Boid, boids: &[Boid], alignment_radius: f32) -> Vec2 {
 async fn main() {
     // Parameters for the simulation
     let mut max_speed = 6.0;
+    let mut max_neighbor_search = 50.0;
     let mut cohesion_radius = 100.0;
     let mut separation_radius = 30.0;
     let mut alignment_radius = 10.0;
@@ -320,9 +339,22 @@ async fn main() {
             let forces: Vec<Vec2> = boids
                 .par_iter()
                 .map(|boid| {
-                    let cohesion = rule1_cohesion(boid, &boids, cohesion_radius);
-                    let separation = rule2_separation(boid, &boids, separation_radius);
-                    let alignment = rule3_alignment(boid, &boids, alignment_radius);
+                    let mut neighbor_indices = vec![];
+
+                    quadtree.query(
+                        &Rectangle {
+                            x: boid.position.x - max_neighbor_search,
+                            y: boid.position.y - max_neighbor_search,
+                            w: max_neighbor_search * 2.0,
+                            h: max_neighbor_search * 2.0,
+                        },
+                        &mut neighbor_indices,
+                    );
+                    let cohesion = rule1_cohesion(boid, &neighbor_indices, &boids, cohesion_radius);
+                    let separation =
+                        rule2_separation(boid, &neighbor_indices, &boids, separation_radius);
+                    let alignment =
+                        rule3_alignment(boid, &neighbor_indices, &boids, alignment_radius);
                     cohesion + separation + alignment
                 })
                 .collect();
@@ -367,6 +399,10 @@ async fn main() {
             egui::Window::new("Simulation Settings").show(egui_ctx, |ui| {
                 ui.add(egui::Slider::new(&mut max_speed, 1.0..=10.0).text("Max Speed"));
                 ui.add(
+                    egui::Slider::new(&mut max_neighbor_search, 1.0..=500.0)
+                        .text("Max neighbor radius"),
+                );
+                ui.add(
                     egui::Slider::new(&mut cohesion_radius, 0.0..=1000.0).text("Cohesion Radius"),
                 );
                 ui.add(
@@ -388,7 +424,7 @@ async fn main() {
                         })
                         .collect();
                 }
-                ui.add(egui::Slider::new(&mut num_boids, 10..=10_000).text("Number of Boids"));
+                ui.add(egui::Slider::new(&mut num_boids, 10..=100_000).text("Number of Boids"));
             });
         });
 
