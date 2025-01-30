@@ -225,80 +225,84 @@ impl Boid {
     }
 }
 
-fn rule1_cohesion(
-    boid: &Boid,
-    neighbor_indices: &[usize],
-    boids: &[Boid],
-    interaction_radius: f32,
-) -> Vec2 {
-    let mut center_of_mass = Vec2::ZERO;
-    let mut count = 0;
-
-    for other_ind in neighbor_indices {
-        let other = boids[*other_ind];
-        if boid.position.distance(other.position) < interaction_radius {
-            center_of_mass += other.position;
-            count += 1;
-        }
-    }
-
-    if count > 0 {
-        center_of_mass /= count as f32;
-        return (center_of_mass - boid.position).normalize_or_zero() * 0.2; // Adjust scaling
-    }
-
-    Vec2::ZERO
-}
-
-fn rule2_separation(
+fn combined_rules(
     boid: &Boid,
     neighbor_indices: &[usize],
     boids: &[Boid],
     separation_radius: f32,
-) -> Vec2 {
-    let mut move_away = Vec2::ZERO;
-    let mut count = 0;
-
-    for other_ind in neighbor_indices {
-        let other = boids[*other_ind];
-        let distance = boid.position.distance(other.position);
-        if distance > 0.0 && distance < separation_radius {
-            move_away += (boid.position - other.position).normalize_or_zero();
-            count += 1;
-        }
-    }
-
-    if count > 0 {
-        return move_away.normalize_or_zero() * 0.2; // Stronger separation force
-    }
-
-    Vec2::ZERO
-}
-
-fn rule3_alignment(
-    boid: &Boid,
-    neighbor_indices: &[usize],
-    boids: &[Boid],
     alignment_radius: f32,
+    cohesion_radius: f32,
 ) -> Vec2 {
-    let mut avg_velocity = Vec2::ZERO;
-    let mut count = 0;
+    let separation_radius_sq = separation_radius * separation_radius;
+    let alignment_radius_sq = alignment_radius * alignment_radius;
+    let cohesion_radius_sq = cohesion_radius * cohesion_radius;
 
-    for other_ind in neighbor_indices {
-        let other = boids[*other_ind];
-        if boid.position.distance(other.position) < alignment_radius {
-            avg_velocity += other.velocity;
-            count += 1;
+    let mut separation_acc = Vec2::ZERO;
+    let mut alignment_acc = Vec2::ZERO;
+    let mut cohesion_acc = Vec2::ZERO;
+
+    let mut separation_count = 0;
+    let mut alignment_count = 0;
+    let mut cohesion_count = 0;
+
+    for &other_idx in neighbor_indices {
+        let other = boids[other_idx];
+
+        let dx = other.position.x - boid.position.x;
+        let dy = other.position.y - boid.position.y;
+        let dist_sq = dx * dx + dy * dy;
+
+        // 1) Separation
+        if dist_sq < separation_radius_sq && dist_sq > 0.0 {
+            // Direction from neighbor to this boid
+            // (or you can do boid.position - other.position)
+            let direction = Vec2::new(
+                boid.position.x - other.position.x,
+                boid.position.y - other.position.y,
+            );
+            // Accumulate normalized direction
+            separation_acc += direction.normalize_or_zero();
+            separation_count += 1;
+        }
+
+        // 2) Alignment
+        if dist_sq < alignment_radius_sq {
+            alignment_acc += other.velocity;
+            alignment_count += 1;
+        }
+
+        // 3) Cohesion
+        if dist_sq < cohesion_radius_sq {
+            cohesion_acc += other.position;
+            cohesion_count += 1;
         }
     }
 
-    if count > 0 {
-        avg_velocity /= count as f32;
-        return (avg_velocity - boid.velocity).normalize_or_zero() * 0.05; // Moderate scaling
+    // Finalize separation: average + scale
+    let mut separation_force = Vec2::ZERO;
+    if separation_count > 0 {
+        separation_acc /= separation_count as f32;
+        // Often you might do a slight weight and normalize:
+        separation_force = separation_acc.normalize_or_zero() * 0.2;
     }
 
-    Vec2::ZERO
+    // Finalize alignment: average
+    let mut alignment_force = Vec2::ZERO;
+    if alignment_count > 0 {
+        let avg_velocity = alignment_acc / alignment_count as f32;
+        alignment_force = (avg_velocity - boid.velocity).normalize_or_zero() * 0.05;
+    }
+
+    // Finalize cohesion
+    let mut cohesion_force = Vec2::ZERO;
+    if cohesion_count > 0 {
+        let center_of_mass = cohesion_acc / cohesion_count as f32;
+        cohesion_force = (center_of_mass - boid.position).normalize_or_zero() * 0.2;
+    }
+
+    separation_force + alignment_force + cohesion_force
 }
+
 #[macroquad::main("Boids with Egui")]
 async fn main() {
     // Parameters for the simulation
@@ -353,12 +357,14 @@ async fn main() {
                         },
                         &mut neighbor_indices,
                     );
-                    let cohesion = rule1_cohesion(boid, &neighbor_indices, &boids, cohesion_radius);
-                    let separation =
-                        rule2_separation(boid, &neighbor_indices, &boids, separation_radius);
-                    let alignment =
-                        rule3_alignment(boid, &neighbor_indices, &boids, alignment_radius);
-                    cohesion + separation + alignment
+                    combined_rules(
+                        boid,
+                        &neighbor_indices,
+                        &boids,
+                        separation_radius,
+                        alignment_radius,
+                        cohesion_radius,
+                    )
                 })
                 .collect();
 
