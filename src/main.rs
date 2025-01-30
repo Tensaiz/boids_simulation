@@ -310,6 +310,9 @@ async fn main() {
     let mut num_boids = 100;
     let mut boid_size = 2.0;
 
+    let mut render_quadtree = false;
+    let mut follow_single = false;
+
     const FIXED_TIMESTEP: f32 = 1.0 / 60.0; // 60 updates per second
     const MAX_TIMESTEP_ACCUMULATION: f32 = 0.1;
     let mut accumulator = 0.0;
@@ -368,8 +371,9 @@ async fn main() {
         }
 
         // Draw the boids
+        let mut neighbor_indices = vec![];
         for (i, boid) in boids.iter().enumerate() {
-            if i == 0 {
+            if i == 0 && follow_single {
                 draw_circle_lines(boid.position.x, boid.position.y, cohesion_radius, 1.0, RED);
                 draw_circle_lines(
                     boid.position.x,
@@ -386,13 +390,41 @@ async fn main() {
                     GREEN,
                 );
                 draw_circle(boid.position.x, boid.position.y, boid_size, GOLD);
-            } else {
+
+                if render_quadtree {
+                    // Render range of neighbors for boid
+                    draw_rectangle_lines(
+                        boid.position.x - max_neighbor_search,
+                        boid.position.y - max_neighbor_search,
+                        max_neighbor_search * 2.0,
+                        max_neighbor_search * 2.0,
+                        1.0,
+                        GOLD,
+                    );
+                    neighbor_indices.clear();
+                    // Find all neighbors being queried for this single boid
+                    quadtree.query(
+                        &Rectangle {
+                            x: boid.position.x - max_neighbor_search,
+                            y: boid.position.y - max_neighbor_search,
+                            w: max_neighbor_search * 2.0,
+                            h: max_neighbor_search * 2.0,
+                        },
+                        &mut neighbor_indices,
+                    );
+                    for index in &neighbor_indices {
+                        draw_circle(
+                            boids[*index].position.x,
+                            boids[*index].position.y,
+                            boid_size,
+                            GOLD,
+                        );
+                    }
+                }
+            } else if !neighbor_indices.contains(&i) {
                 draw_circle(boid.position.x, boid.position.y, boid_size, WHITE);
             }
         }
-
-        // Draw QuadTree
-        quadtree.render();
 
         // Render egui
         new_egui_macroquad::ui(|egui_ctx| {
@@ -424,6 +456,11 @@ async fn main() {
                         })
                         .collect();
                 }
+                ui.add(egui::Checkbox::new(&mut follow_single, "Mark single boid"));
+                ui.add(egui::Checkbox::new(
+                    &mut render_quadtree,
+                    "Render the quad tree",
+                ));
                 ui.add(egui::Slider::new(&mut num_boids, 10..=100_000).text("Number of Boids"));
             });
         });
@@ -450,6 +487,10 @@ async fn main() {
             _ => (),
         }
 
+        // Draw QuadTree
+        if render_quadtree {
+            quadtree.render();
+        }
         next_frame().await;
     }
 }
